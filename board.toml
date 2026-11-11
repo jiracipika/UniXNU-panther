@@ -1,0 +1,67 @@
+"schema_version" = 2
+
+["board"]
+# example stays true until the firmware repository exists and the payload
+# inputs are complete; the build commands reject example repositories.
+"example" = true
+"name" = "panther"
+"soc" = "gs201"
+"soc_source" = "gs201"
+"os_profile" = "ipados-17.7.11-21H461"
+"description" = "Google Pixel 7 (Tensor G2)"
+"kit" = "panther"
+
+["components"]
+"include" = ["ArmDTPlatform", "ArmCpu", "SoftwareAES", "XnuPrelink", "DarwinBoot"]
+
+["kernel"]
+"defconfig" = "panther_defconfig"
+"config_fragments" = ["arch:configs/common.config", "soc:configs/gs201.config", "os:configs/ipados.config"]
+"patch_series" = ["arch:patches/xnu/series", "soc:patches/xnu/series", "os:patches/xnu/series", "device:patches/xnu/series"]
+
+["device_tree"]
+"source" = "device:dts/panther.dts"
+"include_dirs" = ["soc:dts"]
+
+["firmware"]
+# uefi-panther (Mu-Silicium fork with a Samsung/gs201 platform) does not exist
+# yet; these are the paths it will use. The platform kernel-field packaging on
+# this board is not the generic gzip+ARM64-header BootShim: Pixel's ABL demands
+# a PE32+ image and the full 64 MiB AVB-partition shape. See
+# docs/GS201-BOOT-DEVIATIONS.md before touching any of this.
+"config" = "panther"
+"dsc" = "Platforms/Google/pantherPkg/panther.dsc"
+"fd" = "Build/pantherPkg/{target}_CLANGPDB/FV/SILICIUM_UEFI.fd"
+"packages" = ["{uefi}", "{uefi}/Platforms/Google", "{tree}/package", "{tree}/drivers/DarwinBoot", "{edk2}", "{uefi}/Common/Mu", "{uefi}/Common/Mu_OEM_Sample", "{uefi}/Silicon/Samsung", "{uefi}/Silicon/Silicium"]
+
+["bootimg"]
+# The firmware DTB the boot image carries (the ABL passes none: x0=x1=0 at
+# entry). Built by the firmware preflight step; see docs/GS201-BOOT-DEVIATIONS.md.
+# dtb = "build/panther/panther.dtb"
+
+["firmware.defines"]
+"DEVICE_MODEL" = "panther"
+
+["payload"]
+# Payload delivery on this board is unresolved: the ABL places no initrd in
+# RAM and writes no /chosen/linux,initrd-start (measured). The first light
+# payload rides in the boot image; the real payload needs a UFS partition per
+# the dual-system procedure once storage works. See
+# docs/GS201-BOOT-DEVIATIONS.md.
+"volume" = "PANTHERESP"
+"size_mib" = 192
+"loader" = "firmware"
+"title" = "UniXNU"
+"kernel_args" = ["-v", "serial=3"]
+
+["package"]
+"unixnu" = "../UniXNU"
+
+["package.defconfig"]
+"ipados-17.7.11-21H461" = "panther_defconfig"
+
+["payload.adt"]
+# gs201 has no CTRR: kernel text stays writable by hardware, which XNU must be
+# told (the ADT must carry kernel-ctrr-to-be-enabled = 0, as on sheng).
+# Supply the board's identity seed through --unique-chip-id at first payload build.
+"unique_chip_id" = "required"

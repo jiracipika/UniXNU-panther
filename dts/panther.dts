@@ -1,0 +1,61 @@
+/dts-v1/;
+/include/ "gs201.dtsi"
+
+/ {
+    model = "Google Pixel 7";
+    compatible = "google,panther", "google,gs201";
+
+    // Four banks observed on the live tree (8 GiB unit): 0x80000000,
+    // 0x880000000, 0x900000000, 0x980000000. Bank sizes below assume 2 GiB
+    // per bank; verify per unit at first light before trusting high banks.
+    memory@80000000 {
+        device_type = "memory";
+        reg = <0x0 0x80000000 0x0 0x80000000>,
+              <0x8 0x80000000 0x0 0x80000000>,
+              <0x9 0x00000000 0x0 0x80000000>,
+              <0x9 0x80000000 0x0 0x80000000>;
+    };
+
+    reserved-memory {
+        #address-cells = <2>;
+        #size-cells = <2>;
+        ranges;
+
+        // Memory the stock bootloader owns across the handoff.
+        splash_region: framebuffer@fac00000 {
+            // HW: ABL cont_splash framebuffer, XRGB8888 1080x2400, DPP0
+            // RDMA scans it while ABL leaves DECON0's trigger masked.
+            label = "cont_splash_region";
+            reg = <0 0xfac00000 0 0x9c4000>;
+            no-map;
+        };
+        ramoops_console: ramoops@fd3ff000 {
+            // DTB (live /proc/iomem): pstore console ring, 2 MiB, first of
+            // the ramoops pair (pmsg ring follows at 0xfd5ff000).
+            reg = <0 0xfd3ff000 0 0x200000>;
+            no-map;
+        };
+        pmsg_ramoops: ramoops@fd5ff000 {
+            reg = <0 0xfd5ff000 0 0x200000>;
+            no-map;
+        };
+        bl_log: bl_log@fd800000 {
+            // DTB (live /proc/iomem): ABL boot logs (bl_log, bl_old_log at
+            // +0x80000). The ABL's account of every failed boot lands here.
+            reg = <0 0xfd800000 0 0x100000>;
+            no-map;
+        };
+    };
+};
+
+// The scheduler runs the A55 cores as an E cluster and the A78/X1 cores as P
+// clusters (the stock tree carries BIG/MID/LITTLE cluster layout; UniXNU
+// tracks two classes like sheng until per-cluster data exists).
+&cpu0 { unixnu,cluster-type = "E"; };
+&cpu1 { unixnu,cluster-type = "E"; };
+&cpu2 { unixnu,cluster-type = "E"; };
+&cpu3 { unixnu,cluster-type = "E"; };
+&cpu4 { unixnu,cluster-type = "P"; };
+&cpu5 { unixnu,cluster-type = "P"; };
+&cpu6 { unixnu,cluster-type = "P"; };
+&cpu7 { unixnu,cluster-type = "P"; };

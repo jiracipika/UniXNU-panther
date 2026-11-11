@@ -1,0 +1,5 @@
+[[source]]
+name = "gs201"
+kind = "soc"
+git = "https://github.com/jiracipika/UniXNU-gs201-common"
+commit = "4bba8996d41cb631b0097418cd897d0bdcb96d76"

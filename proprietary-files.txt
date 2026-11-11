@@ -1,0 +1,8 @@
+# Required firmware inputs: relative path | source | SHA-256 | consumer
+# Inventory pending: hash each input at first extraction; extracted firmware
+# lives in no repository.
+mali_csffw.bin | https://github.com/x/NOT-PINNED-YET (linux-firmware arm/mali/arch10.8) | NOT-HASHED | GPU CSF firmware (Valhall arch 10.8; the device's own kbase-ABI blob is incompatible)
+# wifi/  — Broadcom WiFi-over-PCIe firmware: inventory from the running
+#           device (/vendor/firmware/wifi) before use; hashes pending.
+# touch/ — Synaptics TCM (SPI) touch firmware: inventory from the running
+#           device (/vendor/firmware) before use; hashes pending.

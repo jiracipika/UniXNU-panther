@@ -1,0 +1,189 @@
+schema_version = 1
+
+[device]
+name = "panther"
+soc = "gs201"
+os_profile = "ipados-17.7.11-21H461"
+summary = "Google Pixel 7 (Tensor G2 gs201). New SoC and firmware ports: the hardware description is DTB-decoded and silicon-verified, the Mu-Silicium platform does not exist yet, and the Pixel ABL deviates from the generic UniXNU boot flow in four measured ways (see docs/GS201-BOOT-DEVIATIONS.md)."
+
+[[area]]
+id = "configuration"
+status = "planned"
+components = ["ArmDTPlatform", "ArmCpu", "SoftwareAES", "XnuPrelink", "DarwinBoot"]
+paths = ["board.toml", "feeds.toml", "configs/**", ".gitmodules", ".github/**", ".gitignore"]
+inputs = ["Board: Pixel 7 (panther), bootloader rango BP4A.251205.006, slot b, unlocked.", "SoC: gs201, no prior UniXNU/Mu-Silicium support; SoC repository created alongside this device repository.", "OS profile: ipados-17.7.11-21H461 (arm64 profile for Cortex-X1/A78/A55 silicon)."]
+configuration = ["board.toml selects soc/gs201 via feeds.toml, iPadOS 17.7.11 profile, device dts/panther.dts including soc gs201.dtsi.", "Kernel: panther_defconfig with arch common + soc gs201 + os ipados fragments; patch order arch, soc, os, device.", "example = true until the firmware repository exists and payload inputs complete."]
+procedure = ["Created from the UniXNU device template; renamed configs and dts files; set gs201 as SoC source.", "Hardware values transferred from the decoded factory device trees (jiracipika/hakios-gs201/dtb) with silicon re-verification where noted."]
+findings = ["The factory base DTB carries gem5 placeholder CPUs and a 256 MiB memory placeholder: live CPU topology and memory come from ABL fixups plus dtbo overlays, so the board DTS records observed values, not the base tree's.", "The base tree's display subsystem (sswrp_dpu@ec00000, Verisilicon DC9x00) is not what ABL scans out of; the live DECON/DPP/DSIM nodes arrive via dtbo overlays at 0x1c0/0x1c2xxxxx addresses.", "The scion gs201 stub's UFS address (0x14700000) contradicts the factory DTB (ufs@3c400000); the DTB is authoritative and the DTSI uses it."]
+completion = ["All source pins resolve; every selected component has a record; status shows the intended overrides and patch order."]
+limits = ["feeds.toml SoC commit pending the gs201-common first commit push."]
+next_action = ["Pin the gs201-common commit in feeds.toml; run ./unixnu defconfig + status to validate resolution."]
+evidence = ["Factory image rango BP4A.251205.006 (SHA-256 e042c4f062fadaae585a862e2b61405df45130e57f4a44e153059d173b0d8a95) decoded to dtb/panther-lga-base{,-2}.dtb (jiracipika/hakios-gs201).", "Live-tree facts from the running device (2026-11-02, Evolution X 11.10 ROM): bank addresses, cluster layout, mali@28000000, psci smc."]
+
+[[area]]
+id = "firmware"
+status = "planned"
+components = []
+paths = ["proprietary-files.txt", "scripts/extract-files.py", "docs/GS201-BOOT-DEVIATIONS.md"]
+inputs = ["Pixel ABL boot contract, measured: PE32+ entry point, x0=x1=0, MMU on with identity-limited mappings, EL2, CNTPCT/CNTFRQ trapped.", "Boot image shape demanded by this ABL: full 64 MiB AVB-partition container (v4 header + lz4 kernel stream + stock AVB0 vbmeta + AVBf footer).", "No firmware/UEFI platform for gs201 exists anywhere publicly; uefi-panther must be created as a Mu-Silicium fork with a Samsung/gs201 platform."]
+configuration = ["firmware paths reserved: Platforms/Google/pantherPkg/panther.dsc, SILICIUM_UEFI.fd under Build/pantherPkg.", "BootShim must be packaged as a PE32+ image (not gzip+ARM64-header); FD base/size compile into it as with the generic shim."]
+procedure = ["Boot contract established across the HakiOS port: 10+ bare-image rejections (104 s floor), stock-shaped AVB container accepted, PE-entry execution proven by timing bands and user-observed framebuffer writes."]
+findings = ["MMU-off preambles at the PE entry are fatal (fetch VA != PA once off); loader code must run under ABL's MMU until the final handoff.", "The modification-volume gate reported in early HakiOS notes was a measurement artifact; kernel-stream edits of any size are fine in the AVB container.", "ABL passes no FDT and no initrd: UniXNURamDiskDxe's initrd handoff has no input on this board; the payload volume needs UFS block storage or an embedded test payload (64 MiB container caps the embedded route).", "Timers are trapped/frozen at PE entry; BootShim-PE must open CNTHCTL before Mu's architectural timer code runs."]
+completion = ["Firmware image builds, enters UniXNU, publishes the framebuffer and preserves the documented memory reservations."]
+limits = ["uefi-panther does not exist yet; this is the critical path."]
+next_action = ["Fork Mu-Silicium as uefi-panther; port the BootShim-PE vehicle from the HakiOS mkpe-image.sh recipe; add Samsung/gs201 platform skeleton (SEC under ABL MMU, timer untrap)."]
+evidence = ["Silicon-proven PE vehicle: GSC container (panther-boot-avb-gsc.img) — blob found, kernel copied, return stub registered, jump executed (jiracipika/hakios-gs201, v21).", "Execution timing bands: ~28-31 s comeback = code ran and reset; 104 s = never entered (10+ observations).", "Stock boot decode: v4 header 1584, lz4-legacy 5 blocks, decompressed size 0x22e4a00, PE SizeOfImage 0x22e7a00, stock AEP RVA 0x1d2a458."]
+
+[[area]]
+id = "cpu"
+status = "planned"
+components = ["ArmCpu"]
+paths = ["package/CpuFreq*", "scripts/*armcpu*"]
+inputs = ["Topology: 2x Cortex-X1 (cpu6-7), 2x Cortex-A78 (cpu4-5), 4x Cortex-A55 (cpu0-3).", "Interrupt controller: GICv3, GICD 0x5880000/0x10000, GICR 0x5900000/0x200000 (factory DTB).", "PSCI 1.0, method smc (factory DTB; ABL enters the kernel at EL2).", "Timebase 24.576 MHz (assumed from gs101 family; verify CNTFRQ_EL0 at first light)."]
+configuration = ["dts/gs201.dtsi cpus node with timebase-frequency 24576000; cluster-type E for A55s, P for A78/X1s."]
+procedure = ["Topology verified against live-tree cluster nodes (BIG/MID/LITTLE) and corrected HakiOS metal.args (2+2+4 audit fix)."]
+findings = ["PSCI SYSTEM_RESET silently no-ops in the ABL fastboot-boot context (SMC and HVC both return without effect) — CPU reset paths cannot rely on PSCI there.", "EL2->EL1 normalization recipe proven in the HakiOS loader (HCR_EL2 RW, SCTLR_EL1 0x30d00800, cptr/hstr 0, cnthctl, cntvoff 0, vttbr 0, icc_sre |=9) — reusable for XNU entry.", "XNU runs cpus=1 without PSCI start attempts (hakios m2ld contract); smp bring-up is untested on this SoC."]
+completion = ["Every enabled CPU reaches its entry checkpoint and timer/IPI handling works on each enabled CPU."]
+limits = ["No UniXNU kernel has run on gs201 yet."]
+next_action = ["First light: single CPU, verify CNTFRQ, GICv3 register access, PSCI affinity info."]
+evidence = ["Live DTB (2026-11-02): cpu@0..cpu@700 nodes, BIG/MID/LITTLE/AUR clusters.", "HakiOS audit fix 2026-11-05: topology corrected from 1xX1+3xA78 to 2xX1+2xA78+4xA55."]
+
+[[area]]
+id = "memory"
+status = "planned"
+components = []
+paths = ["dts/**", "package/*Smmu*", "package/*Memory*", "scripts/*smmu*", "scripts/*memory*"]
+inputs = ["Banks observed on the live tree: 0x80000000, 0x880000000, 0x900000000, 0x980000000 (8 GiB unit; bank sizes unverified).", "ABL-owned regions (live /proc/iomem): ramoops 0xfd3ff000-0xfd7fefff (console 2 MiB + pmsg 2 MiB), bl_log 0xfd800000-0xfd8fffff (bl_log + bl_old_log).", "Splash framebuffer 0xfac00000, 0x9c4000 bytes (XRGB8888 1080x2400)."]
+configuration = ["dts/panther.dts: four memory banks with size assumption noted; reserved-memory nodes for splash, ramoops pair, bl_log."]
+procedure = ["Bank addresses captured via live-device devicetree node names (2026-11-02) and m2ld FDT walks; reservations confirmed via recovery /proc/iomem."]
+findings = ["ABL's fastboot-boot identity map covers only regions it mapped; high banks and ramoops zones were unmapped in that context (MMU-on physical writes faulted; MMU-off writes landed).", "The pstore console ring survives into the next boot as /sys/fs/pstore/console-ramoops-0 but each Android reboot consumes one generation — the ring must be read before the next full Android boot wraps it (logd wraps pmsg in ~35 s; the console ring wraps slowly)."]
+completion = ["All handoff regions are accounted for and each enabled DMA engine accesses its allocated range with the documented cache policy."]
+limits = ["Bank sizes assumed 2 GiB each; no XNU memory-map run on gs201 yet."]
+next_action = ["Verify bank sizes from ABL boot log (bl_old_log) or a first-light memory probe; confirm whether ABL's 32 MiB kernel region reservation exists on gs201 as on gs101 (0xf8800000)."]
+evidence = ["/proc/iomem from TWRP recovery root (2026-11-06): fd3ff000-fd7fefff reserved (ramoops), fd800000-fd8fffff reserved (bl_log).", "m2ld window-ladder probes mapped high banks selectively; unmap faults recorded with ESR/ELR/FAR."]
+
+[[area]]
+id = "storage"
+status = "planned"
+components = []
+paths = ["drivers/*Ufs*", "scripts/*ufs*", "scripts/*storage*", "scripts/*userdata*", "scripts/*root*"]
+inputs = ["UFS 3.1 via google,ufshc at 0x3c400000 (factory DTB, authoritative): ufs_hc 0x3c400000/0x1000, ufs_top 0x3c410000/0x504, ufs_phy_sram 0x3c700000/0x14000, three PSM status windows.", "PHY bring-up and calibration tables: no gs201 mainline DT exists; port sources are PixOS gs101 shim (ufs.c) and Scion Exynos UFS driver, both flagged as needing gs201-specific ufsinit + PHY tables.", "Partition geometry: must come from the target board (userdata first/last LBA, block size) — not yet recorded."]
+configuration = ["ufs node disabled in gs201.dtsi with the full six-window register map."]
+procedure = ["Address corrected from the scion stub's 0x14700000 (gs101 value) to the factory DTB's 0x3c400000."]
+findings = ["The HakiOS FEATURES verdict holds here: storage is a REWRITE (gs201 UFS3.1 differs from both upstream HakiOS eMMC and sheng's Qualcomm UFS); Scion's Exynos 9810 ufshc.c is the closest structural base, google,ufshc carry-over noted in PORT-FROM-SCION.md.", "The UniXNU dual-system partition procedure is the payload-delivery fix for this board (ABL gives no initrd)."]
+completion = ["Host: register, clock, link and SMMU facts match the board inventory.", "Reads: SCSI capacity, GPT and known blocks are correct; OS/SystemOS windows stay within userdata.", "Root: the configured volume mounts and launchd starts. Persistence: writes survive reboot within the allocated Data region."]
+limits = ["No UFS access from any non-Linux context on gs201 yet; geometry unrecorded."]
+next_action = ["Record partition geometry from the running device (read by-name symlinks + block sizes over adb; userdata is readable via the running Android)."]
+evidence = ["Factory DTB ufs@3c400000 node decoded 2026-11-11 from panther-lga-base.dtb (reg + reg-names transcribed in gs201.dtsi).", "PixOS pixelios-kernel PORTING.md: gs201 needs ufsinit.c + PHY tables (read 2026-11-06, /tmp/research/pixos)."]
+
+[[area]]
+id = "display"
+status = "planned"
+components = ["GopFramebuffer"]
+paths = ["package/*Display*", "package/*Framebuffer*", "package/*Backlight*", "scripts/*display*", "scripts/*gop*", "scripts/*framebuffer*"]
+inputs = ["ABL-owned pipeline: DECON0 0x1c240000 (frame_start IRQ SPI 241), DPP0 0x1c0b0000 (RDMA_BASEADDR_Y8 at +0x40 points at the splash), DSIM0 0x1c2c0000 (clock-gated until enabled).", "Splash: 0xfac00000, XRGB8888, 1080x2400, stride 4320; panel Samsung S6E3FC3-P10, command mode.", "ABL leaves TRIG_CON (0x1c240030) = 0x3070: HW trigger masked, screen frozen on the splash frame.", "Brightness: DCS 0x51, 11-bit, over DSIM PKTHDR 0x58 / PAYLOAD 0x5c (omarchy recipe, panel takeover PASSED on panther)."]
+configuration = ["gs201.dtsi: decon0/dpp0/dsim0 nodes disabled with observed addresses; panther.dts reserves the splash region."]
+procedure = ["Display facts from register observation while ABL held the splash (HakiOS m2bars/m2blink probes) plus the linux-omarchy gs201 display work."]
+findings = ["Two attempts to make DECON fetch new frames failed on panther: force TRIG_CON=0x3061 (cheetah recipe) and TRIG_CON RMW + DPP0 SHD_REG_UP_REQ=0x8010003f — the phone kept showing the frozen logo; parked in the HakiOS port, unresolved.", "DSIM register access while the block is clock-gated raises an external abort (twice reproduced; MMU state irrelevant) — DSIM bring-up must go through the clock path first.", "linux-omarchy gs-decon is cheetah-profiled (offers 1440x3120 modes, refuses panther's 1080x2400); panther S6E3FC3-P10 modes must be added — this is the nearest working-code source for the UEFI GOP driver.", "simplefb/simpledrm under Linux show ABL's frozen frame: static scanout of the splash works; dynamic fetch is the open problem."]
+completion = ["A known frame appears with correct geometry and colors, then userland presentation and backlight controls work."]
+limits = ["No dynamic DECON fetch demonstrated on panther by anyone (parked in both HakiOS and omarchy); UEFI menu and QR logs depend on solving it."]
+next_action = ["Port omarchy gs-decon to panther modes inside uefi-panther; reproduce the frozen-frame state in UEFI and work through the trigger/shadow-update problem with the menu's log channel as feedback."]
+evidence = ["m2bars 2/2 runs: code painted 0xfac00000, user observed frozen Google logo, DECON never fetched (2026-11-06).", "m2blink 2/2 runs: DSIM access floors the boot at 104 s (external abort), MMU-on and MMU-off variants identical.", "omarchy DISPLAY-PLAN.md (pulled 2026-11-06, /tmp/panther-display.md): D1/D2 PASSED panel takeover + brightness on panther, D3 flips pending."]
+
+[[area]]
+id = "input"
+status = "planned"
+components = []
+paths = ["drivers/*Touch*", "package/*Touch*", "package/*Button*", "scripts/*touch*", "scripts/*hid*"]
+inputs = ["Touch: Synaptics TCM over SPI (panther variant; the HakiOS upstream redwood_tcm.c speaks TCM and was judged the cheapest port source).", "Buttons: power + volume; gs201 buttons wiring unrecorded at UniXNU level."]
+configuration = ["No touch component selected yet; TCM driver port comes after root device."]
+procedure = ["Controller identified from the factory DTBO fragments during the HakiOS FEATURES analysis."]
+findings = ["HakiOS FEATURES verdict: touch = TWEAK (port upstream redwood_tcm.c to panther's Synaptics TCM-SPI variant) — the UniXNU equivalent is adapting the interface against ShengNovatekTouch's driver shape, not reusing it (different controller family)."]
+completion = ["Touches map to the display, simultaneous contacts keep stable IDs, release events arrive, and buttons produce expected HID reports."]
+limits = ["No touch data captured on gs201 in any OS context; firmware image inventory pending."]
+next_action = ["Inventory touch firmware from /vendor/firmware on the running device; record SPI bus/controller numbers from the dtbo overlay."]
+evidence = ["FEATURES.md (jiracipika/hakios-pixel7/docs): per-subsystem verdicts from DTBO fragment + vendor HAL config analysis (2026-11-04)."]
+
+[[area]]
+id = "gpu"
+status = "planned"
+components = []
+paths = ["package/*Gpu*", "scripts/*gpu*", "scripts/*metal*"]
+inputs = ["Mali G710 MC10, Valhall arch 10.8 CSF: reg 0x28000000/0x480000, IRQs SPI 329 (job) / 330 (mmu) / 328 (gpu), compatible google,gs201-mali + arm,mali-valhall-csf.", "Firmware: linux-firmware arm/mali/arch10.8/mali_csffw.bin (Redistributable, Arm EULA). The device's own /vendor mali_csffw-r54p3.bin is kbase-ABI and incompatible.", "DVFS: ACPM mailbox 0x18210000, SRAM 0x18500000, IDs 0x0B040005 (G3D) / 0x0B040006 (G3DL2); 151 MHz stub clock ran GLES+Vulkan on panther before DVFS.", "EL3 hazards: PMU G3D registers 0x18061e00-0x18062010 crash the SoC on an NS read; never touch CMU_G3D PLLs (ACPM owns them) or GLOBAL_CON/SRESET while owning the splash."]
+configuration = ["gpu node disabled in gs201.dtsi with verified addresses and interrupts; firmware listed in proprietary-files.txt pending hash."]
+procedure = ["All facts verified on panther silicon by linux-omarchy (panthor ran GLES 3.1 + Vulkan 1.4 on this exact board) — the only silicon-proven Mali source for gs201."]
+findings = ["No UniXNU Mali CSF component exists (the org's GPU components are Adreno-only); a MaliCsf XNU driver is a new component, not an adaptation.", "The GPU hands over powered from the ABL splash; a fixed 151 MHz stub clock was sufficient for bring-up on Linux (no ACPM/DVFS/power-domain control needed at first light)."]
+completion = ["GPU submissions complete, mapping/fence handling is correct, a known image renders, and the selected Metal client presents it."]
+limits = ["GPU is explicitly a later milestone: display, storage and kernel come first (matches the HakiOS milestone order)."]
+next_action = ["Keep the facts pinned; no work before root device + display."]
+evidence = ["GPU research report (2026-11-06, sourced: linux-omarchy gs201 dts + panthor, linux-firmware, gs kernel trees) — all values DTB- or silicon-verified."]
+
+[[area]]
+id = "network"
+status = "planned"
+components = []
+paths = ["drivers/*Wifi*", "package/*Wifi*", "scripts/*wifi*", "scripts/*mhi*"]
+inputs = ["WiFi: Broadcom, PCIe-attached (HakiOS FEATURES: bcmdhd-over-PCIe, dtbo fragment@87); chip and PCIe RC bases unrecorded at UniXNU level.", "Bluetooth: UART-attached (HakiOS FEATURES: nitrous-UART + btbcm .hcd), REWRITE-small verdict."]
+configuration = ["No network component selected; comes after root device."]
+procedure = ["Subsystem class identified from DTBO fragments and vendor HAL configs during the HakiOS FEATURES analysis."]
+findings = ["No UniXNUM Broadcom-WiFi component exists (sheng uses Qualcomm WCN7850/Ath12k); the network stack is a new component on both the driver and firmware sides.", "Firmware inventory from /vendor/firmware/wifi is a prerequisite for any driver work."]
+completion = ["Scanning, association, address configuration and sustained receive/transmit traffic pass with the selected firmware."]
+limits = ["Last/never milestone in the HakiOS order; unchanged here."]
+next_action = ["Inventory WiFi/BT firmware and PCIe controller nodes from the running device at the next phone session."]
+evidence = ["FEATURES.md verdicts (2026-11-04)."]
+
+[[area]]
+id = "audio"
+status = "planned"
+components = []
+paths = ["package/*Adsp*", "package/*Audio*", "package/*Gpr*", "scripts/*adsp*", "scripts/*audio*"]
+inputs = ["Audio: AOC hub + cs35l43 smart amp + DW-card (HakiOS FEATURES: REWRITE-big); DSP/ACPM paths share the mailbox facts in the SoC DTSI."]
+configuration = ["No audio component selected."]
+procedure = ["Class identified from DTBO fragments and vendor HAL configs (2026-11-04)."]
+findings = ["Audio depends on ACPM and AOC firmware loading — keep it strictly after CPU/ACPM bring-up; no shortcut exists."]
+completion = ["Each declared route carries the selected audio format through playback or capture and handles start/stop correctly."]
+limits = ["REJECT-now in the HakiOS order; unchanged."]
+next_action = ["None until root device."]
+evidence = ["FEATURES.md verdicts (2026-11-04)."]
+
+[[area]]
+id = "power"
+status = "planned"
+components = []
+paths = ["package/*Battery*", "package/*Power*", "package/*PlatformPower*", "scripts/*power*", "scripts/*battery*"]
+inputs = ["PMU syscon 0x18060000 (gs201.dtsi): reboot controller, SYSIP_DAT0 at +0x810 (write 0xfa before reset to land in the bootloader), PS_HOLD at +0x3e9c bit 8.", "EL3 gating: PMU_ALIVE direct MMIO writes from EL1/EL2 are ignored (observed); SMC 0x82000504 performs a fast deterministic reset (and with a recovery preset lands the phone in recovery).", "PMIC: Samsung s2mpg12 family (HakiOS FEATURES: PMIC/audio REJECT-now)."]
+configuration = ["pmu node disabled in gs201.dtsi; reset semantics documented in the deviations doc."]
+procedure = ["Reset recipes established empirically across the HakiOS boot campaign (v13-v21 runs)."]
+findings = ["Cluster watchdog enable-time-violation resets (0x200c4000/0x200c5000, key 0xc0ffee at base+0x04) fire reliably from the ABL fastboot-boot context; steady countdown arming does not (counter frozen in that context).", "bootreason after our forced resets reads watchdog,apc,early in Android."]
+completion = ["Declared power controls and battery readings match observations; each claimed sleep/resume transition restores its dependent peripherals."]
+limits = ["Battery/fuel-gauge work not started; reset paths are the only proven power facts."]
+next_action = ["Map the reset recipes onto the UniXNU platform power ops when the firmware platform exists."]
+evidence = ["HakiOS m2loader day-3 model (2026-11-07, commit a5e035f): watchdog recipes and SMC reset behavior, silicon-verified.", "Factory DTB watchdog nodes decoded 2026-11-11: key-unlock 0xc0ffee present in-tree, confirming the register protocol."]
+
+[[area]]
+id = "packaging"
+status = "planned"
+components = ["XnuPrelink", "DarwinBoot"]
+paths = ["scripts/*payload*", "scripts/*image*", "scripts/*flash*", "patches/**", "package/Kit.toml"]
+inputs = ["Boot image: 64 MiB AVB-partition container, v4 header (1584), lz4-legacy kernel stream, PE32+ entry — packer proven (mkboot-gs201.sh + mkpe-image.sh in jiracipika/hakios-gs201).", "The generic ./unixnu bootimg flow packs a gzip BootShim: this board needs the PE variant wired into the firmware preflight/bootimg step instead."]
+configuration = ["board.toml bootimg.dtb reserved for the firmware DTB the boot image carries (ABL provides none)."]
+procedure = ["Vehicle chain verified end-to-end in the HakiOS port: PE blob verbatim at the stock AEP, GSPE manifest found in the download buffer, kernel copied, return stub registered, jump executed (v21)."]
+findings = ["lz4-legacy recompression is byte-reproducible with lz4 -l -9 (verified against Google's stock stream, 17,195,325 bytes byte-identical).", "fastboot boot leaves the phone in fastboot after some resets — the test loop must fastboot reboot before waiting for adb (recorded in the HakiOS loop)."]
+completion = ["Kernel and prelink succeed, payload contains all declared inputs, and the boot image matches the bootloader format and size limit."]
+limits = ["No UniXNU boot image has been built for gs201; the packer integration is pending the firmware platform."]
+next_action = ["Port the mkpe/mkboot vehicle into the firmware preflight + bootimg flow when uefi-panther lands."]
+evidence = ["jiracipika/hakios-gs201 gsloader/ vehicle images and packers (2026-11-04 through 2026-11-09, all byte-verified)."]
+
+[[area]]
+id = "diagnostics"
+status = "planned"
+components = []
+paths = ["scripts/check-*", "scripts/probe-*", "scripts/audit-*", "scripts/read-*", "package/Boot*", "unixnu.lock"]
+inputs = ["No serial console (Suzy-Q not owned; fastboot oem uart exists but needs a 1.8 V debug cable).", "Observables that work today: timing bands (28-31 s ran / 104 s never-entered), pstore rings via TWRP recovery root adb, ABL bl_old_log at 0xfd880000, Android bootreason.", "UniXNU's AdvancedLogger + QR export is the intended firmware-era channel and removes the serial dependency — integrate it before kernel bring-up."]
+configuration = ["Phone test loop with auto-recover exists (jiracipika/hakios-pixel7 phone-test-loop.sh; exit codes 0/2/3)."]
+procedure = ["All diagnostics to date ran via the HakiOS loop: serial-strict adb, fastboot boot of RAM-only sessions, self-reboot watch, auto-recover."]
+findings = ["pstore readout has a chicken-and-egg trap: each Android reboot consumes the previous boot's ring generation; read from TWRP before the next full Android boot (logd wraps pmsg in ~35 s).", "Recovery adb requires a user-side Allow tap (unauthorized by default); the working pattern is a background watcher polling adb state, firing the readout the moment root recovery appears.", "/dev/mem is STRICT_DEVMEM-blocked even as root in recovery; pstore files are the readable channel."]
+completion = ["Each claimed milestone has a reproducible command, a matching source/image revision and an accessible result."]
+limits = ["Every observation above comes from the HakiOS campaign; the UniXNU chain has no hardware runs yet."]
+next_action = ["Integrate AdvancedLogDxe + QR export in uefi-panther from day one; keep the phone test loop as the outer harness."]
+evidence = ["HakiOS diagnostic scripts: dump-bl-log.sh, phone-test-loop.sh (jiracipika/hakios-pixel7/scripts), loader plog records (DBGC rings, URET layout)."]
