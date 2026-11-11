@@ -8,6 +8,6 @@
 # which exists outside sheng's device patches. This series applies the
 # panther variant instead (identical minus those two device-specific
 # hunks), then carries the OS profile's remaining entries verbatim.
-patches/xnu/zzz-boot-progress-panther.patch
+zzz-boot-progress-panther.patch
 component:XnuPrelink/patches/xnu-10063.141.1-security-init.patch
 component:XnuPrelink/patches/xnu-10063.141.1-sparse-index.patch
