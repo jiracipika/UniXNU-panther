@@ -1,1 +1,13 @@
 # Board patch paths, one per line in application order.
+#
+# The arch and soc series apply before this file (board.toml patch_series).
+# This file supersedes the OS profile's series: its first entry
+# (arch:patches/xnu/zzz-boot-progress.patch) was written against the
+# sheng-integrated tree — one hunk instruments sheng_pmgr_run() and another
+# wires sheng_boot_watchdog_policy() into load_init_program, neither of
+# which exists outside sheng's device patches. This series applies the
+# panther variant instead (identical minus those two device-specific
+# hunks), then carries the OS profile's remaining entries verbatim.
+patches/xnu/zzz-boot-progress-panther.patch
+component:XnuPrelink/patches/xnu-10063.141.1-security-init.patch
+component:XnuPrelink/patches/xnu-10063.141.1-sparse-index.patch
