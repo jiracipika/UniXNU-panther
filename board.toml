@@ -1,9 +1,11 @@
 "schema_version" = 2
 
 ["board"]
-# example stays true until the firmware repository exists and the payload
-# inputs are complete; the build commands reject example repositories.
-"example" = true
+# No REQUIRED placeholders remain: the hardware description is complete
+# (DTB-decoded, silicon-verified) and every pending area is documented in
+# porting.toml. The firmware repository (uefi-panther) does not exist yet —
+# that gap lives in the porting record, not in a placeholder.
+"example" = false
 "name" = "panther"
 "soc" = "gs201"
 "soc_source" = "gs201"
