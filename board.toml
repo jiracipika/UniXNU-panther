@@ -45,6 +45,10 @@
 
 ["firmware.defines"]
 "DEVICE_MODEL" = "panther"
+# Mu's SecureBootHandlerLib reaches the build as an empty token when the
+# variable is undefined, breaking the cc response files of modules that use
+# them (documented on the nx769j device record).
+"ENABLE_SECUREBOOT" = "0"
 
 ["payload"]
 # Payload delivery on this board is unresolved: the ABL places no initrd in
